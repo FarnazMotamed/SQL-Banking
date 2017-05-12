@@ -1,0 +1,175 @@
+
+/*calendar*/
+IF OBJECT_ID('tempdb..#dim_dates') IS NOT NULL DROP TABLE #dim_dates
+
+CREATE TABLE #dim_dates (
+	day_date date
+	primary key (day_date) with (ignore_dup_key = on)
+);
+
+/*customers entities*/
+IF OBJECT_ID('tempdb..#dim_customers') IS NOT NULL DROP TABLE #dim_customers
+
+CREATE TABLE #dim_customers (
+	id int,
+	name nvarchar(255)
+	primary key (id)
+);
+
+/*customer statuses entities*/
+IF OBJECT_ID('tempdb..#dim_customer_statuses') IS NOT NULL DROP TABLE #dim_customer_statuses
+
+
+CREATE TABLE #dim_customer_statuses (
+	id int,
+	name nvarchar(255)
+	primary key (id)
+);
+
+
+DECLARE @Date [date] = '20150101', @DateTo [date] = '20151231';
+
+WHILE @Date <= @DateTo
+BEGIN
+	INSERT INTO #dim_dates(day_date) SELECT @Date;
+	SET @Date = DATEADD(dd, 1, @Date);
+END;
+
+MERGE #dim_customer_statuses WITH(HOLDLOCK) AS t
+USING (
+	SELECT
+		v.id
+		,v.name
+	FROM (VALUES (1, 'Active And Good'), (2, 'Inactive And Good'), (3, 'Active And Bad'), (4, 'Inactive And Bad')) AS v(id, name)
+) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE
+SET
+	t.name = s.name
+WHEN NOT MATCHED BY TARGET THEN
+INSERT(id, name) VALUES (s.id, s.name);
+
+MERGE #dim_customers WITH(HOLDLOCK) AS t
+USING (
+	SELECT
+		v.id
+		,v.name
+	FROM (VALUES (1, 'John Doe'), (2, 'Jane Roe'), (3, 'Aaron A. Aaronson'), (4, 'Alan Poe'), (5, 'Tommy Atkins')) AS v(id, name)
+) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE
+SET
+	t.name = s.name
+WHEN NOT MATCHED BY TARGET THEN
+INSERT(id, name) VALUES (s.id, s.name);
+
+select * from #dim_customers;
+
+select * from #dim_customer_statuses;
+
+select * from #dim_dates;
+
+
+/*Design and populate fact table according to aforementioned definitions and facts about customers' loans.*/
+
+IF OBJECT_ID('tempdb..#fact_table') IS NOT NULL DROP TABLE #fact_table
+
+CREATE TABLE #fact_table (
+    Dates date,
+	Customer_Id INT,
+	Customer_Status INT
+	FOREIGN key (Customer_Id) REFERENCES #dim_customers(id) ,
+	FOREIGN key (Dates) REFERENCES #dim_dates(day_date) ,
+	FOREIGN key (Customer_Status) REFERENCES #dim_customer_statuses(id)
+);
+
+insert into #fact_table values 
+('20150131',1,1 ), ('20150131', 2,2 ),('20150131',3,2 ),('20150131',4,2 ),('20150131',5 ,2 ),
+('20150228', 1,1 ),('20150228', 2,2 ),('20150228',3,1 ),('20150228', 4,2),('20150228', 5,2),
+('20150331', 1,1 ),('20150331', 2,1 ),('20150331',3,1 ),('20150331', 4,1 ),('20150331', 5,2 ),
+('20150430', 1,1 ),('20150430', 2,1 ),('20150430', 3,1 ),('20150430', 4,3 ),('20150430', 5,1 ),
+('20150531', 1,1 ),('20150531', 2,3 ),('20150531', 3,1 ),('20150531', 4,3 ),('20150531', 5,1 ),
+('20150630', 1,1 ),('20150630', 2,3 ),('20150630', 3,1 ),('20150630', 4,3 ),('20150630', 5,1 ),
+('20150731', 1,2 ),('20150731', 2,3 ) ,('20150731', 3,1 ),('20150731', 4,3 ),('20150731', 5,1 ),
+('20150831', 1,2 ),('20150831', 2,3 ),('20150831', 3,1 ),('20150831', 4,3),('20150831', 5,1 ),
+('20150930', 1,2 ),('20150930', 2,4 ),('20150930', 3,1 ),('20150930', 4,3 ),('20150930', 5,1 ),
+('20151028', 1,2 ),('20151028', 2,4 ),('20151028', 3,1 ),('20151028', 4,3 ),('20151028', 5,1 ),
+('20151128', 1,1 ),('20151128', 2,4 ),('20151128', 3,1 ),('20151128', 4,3 ),('20151128', 5,2 ),
+('20151231', 1,1 ),('20151231', 2,4 ),('20151231', 3,1 ),('20151231', 4,3),('20151231', 5,2 )
+
+select * from #fact_table;
+
+/*a*/
+
+/* a report done via SQL query (or queries): number of customers per status for period for last date of each month in calendar. 
+In the first column it should contain list of statuses as row values, and the other columns 
+should correspond to specified dates and values should be # of customers. 
+(as on screen-shot, just with real numbers). Note, that dates can be totally different. 
+Also, note, that no additional tables are permitted. It should be simple select from the fact table connected to dimension tables. 
+The real numbers in layout below are removed. That is what you would need to calculate.r*/
+
+select s5.datess, ISNULL(s5.Active_And_Good,0) AS Active_And_Good, ISNULL(s5.Inactive_And_Good,0) AS Inactive_And_Good,
+ISNULL(s5.Active_And_Bad,0) AS Active_And_Bad, ISNULL(s6.Inactive_And_Bad,0) AS Inactive_And_Bad
+from
+(select s3.dates as datess, s3.#Active_Good as Active_And_Good, s3.#Inactive_Good as Inactive_And_Good, 
+s4.Active_Bad as Active_And_Bad from
+(select s1.Dates as dates, s1.Active_Good as #Active_Good, s2.Inactive_Good as #Inactive_Good from
+(select count(DISTINCT Customer_Id) as Active_Good, Dates
+from #fact_table
+where Customer_Status = 1
+group by Dates) as s1
+full outer join
+(select count(DISTINCT Customer_Id) as Inactive_Good, Dates
+from #fact_table
+where Customer_Status = 2
+group by Dates) as s2
+on s1.Dates=s2.Dates)  as s3
+full outer join
+(select count(DISTINCT Customer_Id) as  Active_Bad, Dates
+from #fact_table
+where Customer_Status = 3
+group by Dates) as s4
+on s3.dates= s4.Dates) as s5
+full outer join
+(select count(DISTINCT Customer_Id) as Inactive_And_Bad, Dates
+from #fact_table
+where Customer_Status = 4
+group by Dates) as s6
+on s5.datess= s6.Dates ;
+
+
+/*i did pivot the final table to get the desired table for the homework*/
+IF OBJECT_ID('tempdb..#pivoted') IS NOT NULL DROP TABLE #pivoted
+Create table #Pivoted ([datess] date, [Active_And_Bad] int, [Active_And_Good] int, [Inactive_And_Bad] int,[Inactive_And_Good] int )
+insert into #pivoted ([datess],[Active_And_Bad],[Active_And_Good],[Inactive_And_Bad] ,[Inactive_And_Good])
+values('2015-01-31',0,1,0,4) , ('2015-02-28',0,2,0,3),('2015-03-31',0,4,0,1),('2015-04-30',1,4,0,0),('2015-05-31',2,3,0,0),
+('2015-06-30',2,3,0,0),('2015-07-31',2,2,0,1),('2015-08-31',2,2,0,1),('2015-09-30',1,2,1,1),('2015-10-28',1,2,1,1),
+('2015-11-28',1,2,1,1),('2015-12-28',1,2,1,1)
+
+select *
+from #pivoted
+unpivot (value for name in ([Active_And_Bad],[Active_And_Good],[Inactive_And_Bad],[Inactive_And_Good])) up
+pivot (max(value) for datess in ([2015-01-31],[2015-02-28],[2015-03-31],
+[2015-04-30],
+[2015-05-31],
+[2015-06-30],
+[2015-07-31],
+[2015-08-31],
+[2015-09-30],
+[2015-10-28],
+[2015-11-28],
+[2015-12-28])) p
+
+
+/*b*/
+
+/* a report done via SQL query (or queries):
+ status for specific customer for last date of each month in calendar. 2 columns - date and status 
+ with corresponding values. allow to specify customer name in WHERE part. 
+ (as on screen-shot, just with real status names).
+ if status is unknown, show as N/A. The same notes as for (a) is applicable here as well. 
+ Status name is removed, you need to determine it.*/
+
+select #fact_table.Dates as day_date, #dim_customers.name as name ,#dim_customer_statuses.name as status_name
+from #fact_table, #dim_customers, #dim_customer_statuses
+where Customer_Id = 2 and #fact_table.Customer_Id=#dim_customers.id and #fact_table.Customer_Status= #dim_customer_statuses.id
+;
+
